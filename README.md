@@ -95,12 +95,9 @@ Charalampos Papadimos
 We train a **Gradient-Boosted Trees (GBT) regressor** to predict next-hour 2 m air temperature, using a Spark MLlib pipeline (`VectorAssembler` → `StandardScaler` → `GBTRegressor`). More precisely, for every hour in the dataset, the model predicts that hour's temperature using only the weather observations from one hour earlier (humidity, wind, pressure, cloud, radiation) plus static time and location features.
  
 
-A deliberate design choice: we **exclude the previous-hour temperature** from the features. With `prev_temp` included the task collapses into trivial persistence forecasting (R² > 0.99 on any model), so removing it forces the model to learn from the actual weather context.
-
- 
+A deliberate design choice: we **exclude the previous-hour temperature** from the features. With `prev_temp` included the task collapses into trivial persistence forecasting (R² > 0.99 on any model), so removing it forces the model to learn from the actual weather context. 
 
 ### Setup
-
 
 - **Features (12):** lagged humidity, wind, pressure, cloud, radiation; cyclical encodings of hour and month (`hour_sin/cos`, `month_sin/cos`); indexed climate label; latitude; longitude.
 
@@ -121,7 +118,6 @@ A deliberate design choice: we **exclude the previous-hour temperature** from th
  
 The model explains roughly 88% of variance with a typical hourly error of ~3 °C — a strong result given that `prev_temp` was withheld.
 
-
 ### Key visualisations
 
 **1. Predicted vs. actual scatter** — points cluster tightly along the y = x diagonal across the full -10 °C to 40 °C range. Residuals form a roughly symmetric distribution around zero, with no systematic curvature, confirming the model isn't biased at temperature extremes.
@@ -133,11 +129,9 @@ The model explains roughly 88% of variance with a typical hourly error of ~3 °C
 **3. Per-city RMSE** — performance varies sharply by climate. Tropical cities (Nairobi 1.17 °C, Mumbai 1.69 °C) are easiest because intra-day and intra-year variance is small. Continental cities (Moscow 4.90 °C, New York 4.26 °C) are hardest — large daily swings and irregular winter cold events expand the error envelope.
  
 
-**4. Seasonal performance** — Summer is the easiest season (RMSE 2.75 °C), closely followed by Autumn (2.81 °C). Spring is the hardest (3.73 °C), with Winter close behind (3.21 °C). Summer and Autumn benefit from more regular solar-driven daily cycles, while Spring and Winter add irregular synoptic events — cold fronts, rapid warm-ups, late-season storms — that the model cannot anticipate without recent temperature.
- 
+**4. Seasonal performance** — Summer is the easiest season (RMSE 2.75 °C), closely followed by Autumn (2.81 °C). Spring is the hardest (3.73 °C), with Winter close behind (3.21 °C). Summer and Autumn benefit from more regular solar-driven daily cycles, while Spring and Winter add irregular synoptic events — cold fronts, rapid warm-ups, late-season storms — that the model cannot anticipate without recent temperature. 
 
-### Cross-validation
- 
+### Cross-validation 
 
 A 3-fold CV across 8 hyperparameter combinations on 20% of training data confirmed the chosen settings are near-optimal: best CV RMSE = **2.86 °C** at `maxIter=50, maxDepth=6, stepSize=0.1` — within ~10% of the production model's test RMSE, with no signs of overfitting.
 
