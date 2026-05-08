@@ -135,3 +135,101 @@ The model explains roughly 88% of variance with a typical hourly error of ~3 °C
 
 A 3-fold CV across 8 hyperparameter combinations on 20% of training data confirmed the chosen settings are near-optimal: best CV RMSE = **2.86 °C** at `maxIter=50, maxDepth=6, stepSize=0.1` — within ~10% of the production model's test RMSE, with no signs of overfitting.
 
+## Phase 2B Part 1 — KMeans Clustering
+
+We collapse each city's 61,368 hourly rows into a single **9-dimensional climate fingerprint** (mean temperature, temperature std, total precipitation, precipitation std, mean humidity, mean wind, mean cloud, mean radiation, and the summer-minus-winter `seasonal_range`), then standardise all features to zero mean and unit variance — essential because raw `total_precip` ranges from 280 mm (Cairo) to 17,550 mm (Mumbai) and would otherwise swamp the distance metric.
+
+### Choosing k
+
+We swept k = 2..7 and tracked two metrics — **WSSSE (Elbow)** (within-cluster error, lower is better) and **silhouette score** (separation quality, higher is better):
+
+| k | WSSSE (Elbow)| Silhouette |
+|---|---|---|
+| 2 | 64.77 | 0.472 |
+| 3 | 46.19 | 0.409 |
+| 4 | 22.65 | 0.572 |
+| **5** | **14.63** | **0.586  ← max** |
+| 6 | 18.00 | 0.271 |
+| 7 | 11.66 | 0.323 |
+
+**k = 5** is the consensus optimum: highest silhouette and on the elbow of the WSSSE curve.
+
+### Final clusters
+
+| Cluster | Cities | Character |
+|---|---|---|
+| 0 | Athens, Cairo, Nicosia | **Hot-dry Mediterranean / Desert** — high temp, low precip, max radiation |
+| 1 | Moscow, London, Berlin | **Cold temperate** — low temp, moderate seasonality, high humidity & cloud |
+| 2 | Sydney, São Paulo, Nairobi | **Mild Southern / Equatorial** — small seasonal range (2–10 °C), moderate precip |
+| 3 | Mumbai | **Monsoon Tropical** — alone, with 17,550 mm precipitation and a 2.4 °C seasonal range |
+| 4 | New York, Tokyo | **Humid Subtropical** — strong seasonality (~21 °C swing), high precipitation |
+
+### Key insights
+
+**1. Data-driven clusters partly disagree with textbook climate labels** — and the disagreements are the interesting findings:
+- Cairo (Desert) joins the two Mediterranean cities — its dry summer / mild winter pattern dominates over the desert label.
+- London (Oceanic) joins Moscow and Berlin (Continental) — climatologically London is closer to cool continental Europe than to Sydney.
+- Sydney (Oceanic), São Paulo (Tropical), and Nairobi (Tropical Highland) collapse into one cluster because they share a small seasonal range despite belonging to three different Köppen classes.
+
+**2. Mumbai is a true outlier** — its 17,550 mm rainfall and 2.4 °C seasonal range place it so far from any other city in scaled feature space that it forms its own cluster.
+
+**3. PCA confirms the structure** — projecting the 9-dim feature vectors into 2D retains **80.1% of variance** (PC1 = 42.9%, PC2 = 37.3%). PC1 separates cold from hot cities, PC2 separates dry-seasonal from humid-equatorial. The visual cluster boundaries match the KMeans assignments cleanly.
+
+---
+
+## Phase 2B Part 2 — Graph Analysis
+
+ Graph analysis complements the earlier clustering by revealing structural relationships that centroid-based methods can miss: connected components show whether the similarity network fragments into isolated subgraphs — groups of cities whose climates are so distinct that no above-threshold link bridges them — while Louvain community detection identifies tightly-knit clusters within the connected portion of the graph. By using all of these techniques, we wanted to see if they will give use similar results.
+
+### Graph structure at a glance
+
+| Property | Value | Meaning |
+|---|---|---|
+| Nodes / Edges | 12 / 9 | Sparse — only ~14% of possible edges |
+| Connected components | **4** | Graph splits into 4 disjoint groups |
+| Triangles | **1** (Athens–Cairo–Nicosia) | The only fully-connected sub-triangle |
+| Diameter | 3 | Longest shortest path in largest component |
+| **Cluster assortativity** | **0.851** | Edges overwhelmingly connect same-cluster cities |
+
+The **0.851 cluster assortativity** is the single most important number — a value near 1.0 means the graph's connectivity respects the KMeans cluster boundaries almost perfectly. The graph and the clustering tell the same story.
+
+### Centrality — different metrics, different stories
+
+| Metric | Top city | Why |
+|---|---|---|
+| **PageRank** | Berlin (1.44) | Hub of the cold-temperate group, links Moscow and London simultaneously |
+| **Betweenness** | São Paulo (0.036) | The graph's *bridge* — sits on the Mumbai → Sydney/Nairobi path |
+| **Closeness** | Athens (3.86) | Inside the only triangle, short weighted distances to neighbours |
+| **Clustering coefficient** | Athens / Cairo / Nicosia (0.987) | All three sit inside the only triangle |
+
+Mumbai is **last on every single metric** — it's a peripheral pendant node with a single incoming edge.
+
+### KMeans vs. Graph methods — the key comparison
+
+We compare three independent grouping methods:
+
+| Method | Groups | Source |
+|---|---|---|
+| KMeans | **5** | Distance-based clustering on continuous features |
+| Connected Components | **4** | Reachability in the similarity graph |
+| Louvain | **4** | Modularity-maximising communities |
+
+**Agreement: ARI = 0.843, NMI = 0.935** — extremely high (1.0 = perfect, 0.0 = random). The three methods agree on **11 out of 12 cities**.
+
+### The single disagreement: Mumbai
+
+- **KMeans** puts Mumbai in its own cluster (#3) — its feature vector is genuinely far from every other city.
+- **Graph methods** (Components and Louvain) merge Mumbai into the tropical group (Sydney / São Paulo / Nairobi).
+
+**Why?** The graph contains a single edge **Mumbai → São Paulo at similarity 0.759** — just barely above the 0.75 threshold. Once two nodes share an edge, graph methods consider them connected, regardless of how different their underlying features are. **Raising the threshold to 0.80 would remove that edge** and bring the two methods into perfect agreement (ARI = 1.0).
+
+### Why this matters
+
+The Mumbai case illustrates a deeper point: **graph methods see only connectivity (binary), while KMeans sees continuous distance**. When edge density is sparse near the threshold, a single borderline edge can flip a group's composition. The disagreement isn't a failure — it flags exactly the boundary case where the data has just enough similarity to bridge two otherwise-distinct climates. The 11/12 agreement confirms that groups validated by **both** methods are structurally robust climate classes.
+
+### Connectivity reflects geography
+
+Shortest-path analysis from extreme landmarks shows the cluster boundaries sharply: **Cairo can only reach Athens and Nicosia (its cluster mates); Moscow can only reach Berlin and London**. There is no path between hot-dry, cold-temperate, and tropical communities at the 0.75 threshold — the graph is genuinely disconnected, showing real climatic separation.
+
+### Why clusters and graphs
+Clustering and graph analytics, instead of predicting a known target, they let the data reveal its own structure — KMeans groups cities in continuous feature space, while the graph exposes how climates connect through pairwise similarity. Running both on the same data provides mutual validation.
