@@ -85,10 +85,6 @@ Per-city aggregates rank cities from Mumbai (mean 26.8 °C) at the top to Moscow
 
 **6. Seasonal temperature range** — the single most discriminating climate feature. Moscow's summer-minus-winter gap is 23.9 °C while Nairobi's is 2.1 °C, an eleven-fold spread that drives the Phase 2B clustering directly.
 
-## Phase 2A — Machine Learning with Spark M... by Charalampos Papadimos
-Charalampos Papadimos
-14:18
-
 ## Phase 2A — Machine Learning with Spark MLlib
 
 
